@@ -1,0 +1,57 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Video</title>
+	<script>
+	  let player=null, c=null, g=null, g2=null;
+
+    const nQuestion = 0
+
+    const queries = ["Kas su hoitud paber on punakas?", "Kas sa vastad jaatavalt?", "Kas meeldib küsimustele vastamine?"]; 
+
+    function loadQuestion(){
+      question.innerHTML=queries[nQuestion]
+      nQuestion += 1
+    }
+
+	  function start(){
+	   player=document.getElementById("v1");
+	   c=document.getElementById("c1")
+	   g=c.getContext("2d");
+	   g2=document.getElementById("c2").getContext("2d");
+	   span1=document.getElementById("s1");
+     span1=document.getElementById("answer");
+	   navigator.mediaDevices.getUserMedia({video:true}).then((stream) => {
+         player.srcObject = stream;
+       });
+	   setInterval(capture, 1000);
+     loadQuestion();
+	  }
+	  function capture(){
+	     g.drawImage(player, 0, 0, c.width, c.height);
+		 g.strokeRect(98, 98, 44, 44);
+		 let d=g.getImageData(100, 100, 40, 40);
+		 g2.putImageData(d, 0, 0);
+		 s1.innerHTML=d.data.slice(0,8);
+     if(d[0]>= 210){
+      answer.innerHTML="JAH"
+      setTimeout(loadQuestion(), 5000)
+     };
+     elif(d[2]>= 210){
+      answer.innerHTML="EI"
+      setTimeout(loadQuestion(), 5000)
+     };
+
+	  }
+	</script>
+  </head>
+  <body onload="start()">
+    <video id="v1" controls autoplay style="width: 45%"></video>
+	<canvas id="c1" width="320" height="240" style="width: 45%"/></canvas><br />	 
+	<canvas id="c2" width="40" height="40"/></canvas>	
+    <span id="s1"></span>	
+
+  <h1 id=question>Laadib küsimust...</h1>
+  <h1 id=answer>Ootab vastust...</h1>
+  </body>
+</html>
