@@ -21,7 +21,9 @@
 	   g2=document.getElementById("c2").getContext("2d");
 	   span1=document.getElementById("s1");
      span1=document.getElementById("answer");
-	   navigator.mediaDevices.getUserMedia({video:true}).then((stream) => {
+	   navigator.mediaDevices.getUserMedia({video: {
+    facingMode: { exact: "environment" }
+  }}).then((stream) => {
          player.srcObject = stream;
        });
 	   setInterval(capture, 1000);
