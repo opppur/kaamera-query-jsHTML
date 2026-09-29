@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <title>Camera Q&A Interactive System</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 800px;
+        margin: 20px auto;
+        text-align: center;
+      }
+      .video-container {
+        display: flex;
+        justify-content: center;
+        gap: 15px;
+        margin-bottom: 15px;
+      }
+      video, canvas {
+        border: 1px solid #ccc;
+        border-radius: 6px;
+      }
+      .quiz-card {
+        background: #f8f9fa;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+        margin-top: 15px;
+      }
+      .badge {
+        display: inline-block;
+        padding: 4px 10px;
+        border-radius: 4px;
+        font-weight: bold;
+        color: white;
+      }
+      .red { background-color: #e74c3c; }
+      .green { background-color: #2ecc71; }
+      .blue { background-color: #3498db; }
+      .btn {
+        padding: 8px 16px;
+        margin-top: 15px;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body onload="start()">
+    <h2>Camera Q&A System</h2>
+
+    <div class="video-container">
+      <video id="v1" autoplay playsinline style="width: 45%;"></video>
+      <canvas id="c1" width="320" height="240" style="width: 45%;"></canvas>
+    </div>
+
+    <div>
+      <p>Target Zone Sample (40x40):</p>
+      <canvas id="c2" width="40" height="40"></canvas>
+      <div id="s1" style="font-weight: bold; margin-top: 5px;">Awaiting camera stream...</div>
+    </div>
+
+    <div class="quiz-card">
+      <h3 id="question-text">Loading question...</h3>
+      <div id="options-text" style="margin: 15px 0;"></div>
+      <div id="result-status" style="font-size: 1.1em; font-weight: bold;"></div>
+      <p>Score: <span id="score-counter">0</span> / <span id="total-questions">0</span></p>
+      <button class="btn" onclick="skipQuestion()">Skip Question</button>
+    </div>
+
+    <script>
+      let player, c1, g, c2, g2, span1;
+
+      // Dataset of questions mapped to color inputs
+      const questions = [
+        {
+          q: "What color is the daytime sky?",
+          options: { RED: "Red", GREEN: "Green", BLUE: "Blue" },
+          answer: "BLUE"
+        },
+        {
+          q: "Which color signals driver 'STOP' at a traffic signal?",
+          options: { RED: "Red", GREEN: "Green", BLUE: "Blue" },
+          answer: "RED"
+        },
+        {
+          q: "What color represents 'GO' at a traffic signal?",
+          options: { RED: "Red", GREEN: "Green", BLUE: "Blue" },
+          answer: "GREEN"
+        }
+      ];
+
+      let currentQIndex = 0;
+      let score = 0;
+      let holdsColor = null;
+      let holdTimer = 0;
+      let isProcessing = false;
+
+      function start() {
+        player = document.getElementById("v1");
+        c1 = document.getElementById("c1");
+        g = c1.getContext("2d");
+        c2 = document.getElementById("c2");
+        g2 = c2.getContext("2d");
+        span1 = document.getElementById("s1");
+
+        navigator.mediaDevices.getUserMedia({ video: true })
+          .then((stream) => {
+            player.srcObject = stream;
+          })
+          .catch((err) => {
+            span1.innerText = "Error accessing camera: " + err.message;
+          });
+
+        loadQuestion();
+        setInterval(capture, 500); // Sample camera every 500ms
+      }
+
+      function loadQuestion() {
+        if (currentQIndex >= questions.length) {
+          document.getElementById("question-text").innerText = "Quiz Completed!";
+          document.getElementById("options-text").innerHTML = `Final Score: ${score} / ${questions.length}`;
+          document.getElementById("result-status").innerText = "Great job!";
+          return;
+        }
+
+        const qData = questions[currentQIndex];
+        document.getElementById("question-text").innerText = `Q${currentQIndex + 1}: ${qData.q}`;
+        document.getElementById("options-text").innerHTML = `
+          <span class="badge red">RED</span>: ${qData.options.RED} &nbsp;|&nbsp;
+          <span class="badge green">GREEN</span>: ${qData.options.GREEN} &nbsp;|&nbsp;
+          <span class="badge blue">BLUE</span>: ${qData.options.BLUE}
+        `;
+        document.getElementById("score-counter").innerText = score;
+        document.getElementById("total-questions").innerText = questions.length;
+        document.getElementById("result-status").innerText = "Hold a RED, GREEN, or BLUE object into the box to select your answer.";
+        isProcessing = false;
+      }
+
+      function capture() {
+        if (!player || player.readyState < 2) return;
+
+        // Draw video frame to main canvas
+        g.drawImage(player, 0, 0, c1.width, c1.height);
+        
+        // Draw target sampling rectangle
+        g.strokeStyle = "yellow";
+        g.lineWidth = 2;
+        g.strokeRect(98, 98, 44, 44);
+
+        // Crop center 40x40 area onto c2
+        let imgData = g.getImageData(100, 100, 40, 40);
+        g2.putImageData(imgData, 0, 0);
+
+        // Detect dominant color
+        let color = detectDominantColor(imgData.data);
+        span1.innerText = `Detected RGB: (${color.avgR}, ${color.avgG}, ${color.avgB}) | Matched Choice: ${color.name}`;
+
+        if (currentQIndex < questions.length && !isProcessing) {
+          processAnswerInput(color.name);
+        }
+      }
+
+      function detectDominantColor(data) {
+        let rSum = 0, gSum = 0, bSum = 0;
+        let totalPixels = data.length / 4;
+
+        for (let i = 0; i < data.length; i += 4) {
+          rSum += data[i];
+          gSum += data[i + 1];
+          bSum += data[i + 2];
+        }
+
+        let avgR = Math.round(rSum / totalPixels);
+        let avgG = Math.round(gSum / totalPixels);
+        let avgB = Math.round(bSum / totalPixels);
+
+        let colorName = "NONE";
+        
+        // RGB threshold detection
+        if (avgR > avgG + 30 && avgR > avgB + 30) {
+          colorName = "RED";
+        } else if (avgG > avgR + 30 && avgG > avgB + 30) {
+          colorName = "GREEN";
+        } else if (avgB > avgR + 30 && avgB > avgG + 30) {
+          colorName = "BLUE";
+        }
+
+        return { avgR, avgG, avgB, name: colorName };
+      }
+
+      function processAnswerInput(detectedColor) {
+        if (detectedColor === "NONE") {
+          holdsColor = null;
+          holdTimer = 0;
+          return;
+        }
+
+        // Debounce: require color to be held stable for 2 captures (~1 sec)
+        if (holdsColor === detectedColor) {
+          holdTimer++;
+        } else {
+          holdsColor = detectedColor;
+          holdTimer = 1;
+        }
+
+        if (holdTimer >= 2) {
+          isProcessing = true;
+          holdTimer = 0;
+          let correctAnswer = questions[currentQIndex].answer;
+          
+          if (detectedColor === correctAnswer) {
+            score++;
+            document.getElementById("result-status").innerText = `Correct! (${detectedColor})`;
+          } else {
+            document.getElementById("result-status").innerText = `Incorrect! You showed ${detectedColor}, answer was ${correctAnswer}.`;
+          }
+
+          currentQIndex++;
+          setTimeout(loadQuestion, 1500);
+        }
+      }
+
+      function skipQuestion() {
+        if (currentQIndex < questions.length) {
+          currentQIndex++;
+          loadQuestion();
+        }
+      }
+    </script>
+  </body>
+</html>
