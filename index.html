@@ -5,18 +5,18 @@
 	<script>
 	  let player=null, c=null, g=null, g2=null;
 
-    const nQuestion = 0;
+    let nQuestion = 0;
 
-    const queries = ["Kas su hoitud paber on punakas?", "Kas sa vastad jaatavalt?", "Kas meeldib küsimustele vastamine?"]; 
+    let queries = ["Kas su hoitud paber on punakas?", "Kas sa vastad jaatavalt?", "Kas meeldib küsimustele vastamine?"]; 
 
     function loadQuestion(){
-      question.innerHTML=queries[nQuestion]
-      nQuestion += 1
+      question.innerHTML=queries[nQuestion];
+      nQuestion += 1;
     }
 
 	  function start(){
 	   player=document.getElementById("v1");
-	   c=document.getElementById("c1")
+	   c=document.getElementById("c1");
 	   g=c.getContext("2d");
 	   g2=document.getElementById("c2").getContext("2d");
 	   span1=document.getElementById("s1");
@@ -34,13 +34,13 @@
 		 g2.putImageData(d, 0, 0);
 		 s1.innerHTML=d.data.slice(0,8);
      if(d[0]>= 210){
-      answer.innerHTML="JAH"
-      setTimeout(loadQuestion(), 5000)
-     };
-     elif(d[2]>= 210){
-      answer.innerHTML="EI"
-      setTimeout(loadQuestion(), 5000)
-     };
+      answer.innerHTML="JAH";
+      setTimeout(loadQuestion(), 5000);
+     }
+     if(d[2]>= 210){
+      answer.innerHTML="EI";
+      setTimeout(loadQuestion(), 5000);
+     }
 
 	  }
 	</script>
