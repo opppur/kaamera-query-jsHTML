@@ -18,7 +18,9 @@
         g2 = document.getElementById("c2").getContext("2d");
         span1 = document.getElementById("s1");
 
-        navigator.mediaDevices.getUserMedia({ video: true }).then((stream) => {
+        navigator.mediaDevices.getUserMedia({video: {
+    facingMode: { exact: "environment" }
+  }).then((stream) => {
           player.srcObject = stream;
         });
 
@@ -127,7 +129,7 @@
         } else if (winner === "DRAW") {
           statusText += "<br/><b>VIIK</b>";
         } else {
-          statusText += "<br/>Show <b>Orange/Red</b> or <b>Blue</b> objects into the grid boxes to play!";
+          statusText += "<br/>Paiguta punased ristid või sinised ringid mängimiseks ruudustikku";
         }
 
         span1.innerHTML = statusText;
