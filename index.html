@@ -20,7 +20,7 @@
 
         navigator.mediaDevices.getUserMedia({video: {
     facingMode: { exact: "environment" }
-  }).then((stream) => {
+  }}).then((stream) => {
           player.srcObject = stream;
         });
 
