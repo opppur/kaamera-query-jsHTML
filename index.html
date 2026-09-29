@@ -29,6 +29,10 @@
 
       function capture() {
         if (!player || player.readyState < 2) return;
+        if (player.videoWidth && (c.width !== player.videoWidth || c.height !== player.videoHeight)) {
+          c.width = player.videoWidth;
+          c.height = player.videoHeight;
+        }
         g.drawImage(player, 0, 0, c.width, c.height);
 
         const cellW = c.width / 3;
