@@ -184,7 +184,7 @@
         // kas eelmine arvuti käik tehti soovitatud kohta?
         let warning = "";
         if (plan && key !== plan.expected && key !== plan.before) {
-          warning = "<br/><i>Hoiatus: laud ei vasta soovitatud käigule.</i>";
+          warning = "<br/><i>Võimalik, et laud ei vasta soovitatud käigule.</i>";
         }
 
         if (d.status === "computer" && d.move >= 0 && d.move < 9 && board[d.move] === "EMPTY") {
@@ -205,8 +205,8 @@
         } else if (d.status === "over") {
           plan = null;
           const msg = d.winner === "DRAW" ? "VIIK"
-                    : d.winner === "X" ? "PUNANE (X) VÕIT!"
-                    : "SININE (O) VÕIT!";
+                    : d.winner === "X" ? "PUNANAST (X) mängiv mängija VÕIT!"
+                    : "SINIST (O) mängiv arvuti Aadu VÕIT!";
           state = {
             kind: "over", board, move: null, message: msg,
             winner: d.winner === "DRAW" ? "DRAW" : (d.winner === "X" ? "RED" : "BLUE")
@@ -243,7 +243,7 @@
   <body onload="start()">
     <video id="v1" controls autoplay playsinline style="width: 45%"></video>
     <canvas id="c1" width="320" height="240" style="width: 45%"></canvas><br />
-    <span id="s1">Paiguta punased ristid või sinised ringid mängimiseks ruudustikku</span><br />
+    <span id="s1">Mängi trips-traps-trulli arvuti Aadu vastu. Paiguta punased ristid või sinised ringid mängimiseks ruudustikku</span><br />
     Sina alustad ja mängid punaste ristidega (X).
   </body>
 </html>
