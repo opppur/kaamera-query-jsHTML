@@ -9,7 +9,8 @@
       const COMPUTER = "BLUE";    // veebileht mängib siniste (O) tükkidega
       const FIRST = "RED";        // kes alustab (RED = X)
       const STABLE_FRAMES = 4;    // mitu järjestikust kaadrit (4 x 500 ms) peab laud samasugune olema
-      const RANDOM_MOVE_CHANCE = 0.2; // tõenäosus, et arvuti valib parima käigu asemel juhusliku
+      const RANDOM_MOVE_CHANCE = 0.2; // tõenäosus, et arvuti valib parima käigu asemel juhusliku (kohalik varuvariant)
+      const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw1d3h9bf6COxq-AeqSPXybz6FubC1CbrYa-tJAbWLOpoKAOqSVb7VY5Yh0DJ1GHaXrBA/exec"; // Apps Scripti veebirakenduse /exec aadress
 
       const WIN_COMBOS = [
         [0, 1, 2], [3, 4, 5], [6, 7, 8], // read
@@ -82,8 +83,19 @@
         if (stableCount >= STABLE_FRAMES && key !== acceptedKey) {
           acceptedKey = key;
           acceptedBoard = board.slice();
-          state = analyse(acceptedBoard);
-          displayStatus(state);
+          const local = analyse(acceptedBoard); // kohalik analüüs = varuvariant
+          if (SCRIPT_URL.startsWith("http")) {
+            if (local.kind === "computer") {
+              state = { kind: "thinking", board: acceptedBoard, move: null, message: "Mõtlen..." };
+            } else {
+              state = local;
+            }
+            displayStatus(state);
+            askServer(acceptedBoard, key, local); // logib laua tabelisse ja küsib käigu
+          } else {
+            state = local;
+            displayStatus(state);
+          }
         }
 
         // 3) joonista (kaamerapilt + märgid + soovitus)
@@ -234,7 +246,7 @@
         return move;
       }
 
-      // Analüüsib lauda ja otsustab, mida teha
+      // Analüüsib stabiilset lauda ja otsustab, mida teha
       function analyse(board) {
         const firstCount = board.filter(x => x === FIRST).length;
         const secondCount = board.filter(x => x === other(FIRST)).length;
@@ -288,6 +300,40 @@
           message: "Minu käik: pane " + (COMPUTER === "BLUE" ? "SININE (O)" : "PUNANE (X)") +
                    " tükk ruutu <b>" + (move + 1) + "</b> (" + CELL_NAMES[move] + ")." + warning
         };
+      }
+
+      // ---------- Google Apps Scripti ühendus ----------
+      async function askServer(board, key, local) {
+        const code = board.map(v => v === "RED" ? "X" : (v === "BLUE" ? "O" : "-")).join("");
+        const url = SCRIPT_URL +
+          "?board=" + code +
+          "&me=" + (COMPUTER === "BLUE" ? "O" : "X") +
+          "&first=" + (FIRST === "RED" ? "X" : "O");
+        try {
+          const res = await fetch(url);
+          const d = await res.json();
+          if (key !== acceptedKey) return; // laud muutus vahepeal, vastus on aegunud
+
+          if (local.kind === "computer") {
+            if (d.status === "computer" && d.move >= 0 && d.move < 9 && board[d.move] === "EMPTY") {
+              const expected = board.slice();
+              expected[d.move] = COMPUTER;
+              plan = { move: d.move, before: board.slice(), expected };
+              state = {
+                kind: "computer", board, move: d.move,
+                message: "Minu käik: pane " + (COMPUTER === "BLUE" ? "SININE (O)" : "PUNANE (X)") +
+                         " tükk ruutu <b>" + (d.move + 1) + "</b> (" + CELL_NAMES[d.move] + ")."
+              };
+            } else {
+              state = local; // server ei nõustunud/andis vigase käigu – kasuta kohalikku
+            }
+            displayStatus(state);
+          }
+        } catch (err) {
+          if (key !== acceptedKey) return;
+          state = local; // võrguviga – kasuta kohalikku arvutust
+          displayStatus(state);
+        }
       }
 
       // ---------- Kuvamine ----------
