@@ -5,18 +5,11 @@
     <title>Kaamera Trips</title>
     <script>
       // ---------- Seaded ----------
+      const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw1d3h9bf6COxq-AeqSPXybz6FubC1CbrYa-tJAbWLOpoKAOqSVb7VY5Yh0DJ1GHaXrBA/exec"; // Apps Scripti veebirakenduse /exec aadress
       const HUMAN = "RED";        // inimene mängib punaste (X) tükkidega
-      const COMPUTER = "BLUE";    // veebileht mängib siniste (O) tükkidega
+      const COMPUTER = "BLUE";    // arvuti mängib siniste (O) tükkidega
       const FIRST = "RED";        // kes alustab (RED = X)
       const STABLE_FRAMES = 4;    // mitu järjestikust kaadrit (4 x 500 ms) peab laud samasugune olema
-      const RANDOM_MOVE_CHANCE = 0.2; // tõenäosus, et arvuti valib parima käigu asemel juhusliku (kohalik varuvariant)
-      const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw1d3h9bf6COxq-AeqSPXybz6FubC1CbrYa-tJAbWLOpoKAOqSVb7VY5Yh0DJ1GHaXrBA/exec"; // Apps Scripti veebirakenduse /exec aadress
-
-      const WIN_COMBOS = [
-        [0, 1, 2], [3, 4, 5], [6, 7, 8], // read
-        [0, 3, 6], [1, 4, 7], [2, 5, 8], // veerud
-        [0, 4, 8], [2, 4, 6]             // diagonaalid
-      ];
 
       const CELL_NAMES = [
         "üleval vasakul", "üleval keskel", "üleval paremal",
@@ -24,21 +17,19 @@
         "all vasakul", "all keskel", "all paremal"
       ];
 
-      let player = null, c = null, g = null, g2 = null, span1 = null;
+      let player = null, c = null, g = null, span1 = null;
 
       // ---------- Mänguseis ----------
-      let lastKey = null;        // viimase kaadri laud
-      let stableCount = 0;       // mitu kaadrit järjest sama laud
-      let acceptedKey = null;    // viimane stabiilne laud, mida on analüüsitud
-      let acceptedBoard = null;
-      let plan = null;           // {move, before, expected} – arvuti viimane soovitus
-      let state = { kind: "init", board: Array(9).fill("EMPTY"), message: "Ootan kaamerat...", move: null };
+      let lastKey = null;       // viimase kaadri laud
+      let stableCount = 0;      // mitu kaadrit järjest sama laud
+      let acceptedKey = null;   // viimane stabiilne laud, mille kohta on serverilt küsitud
+      let plan = null;          // {before, expected} – arvuti viimane soovitus (laua võtmed)
+      let state = { kind: "init", board: Array(9).fill("EMPTY"), move: null, message: "" };
 
       function start() {
         player = document.getElementById("v1");
         c = document.getElementById("c1");
         g = c.getContext("2d");
-        g2 = document.getElementById("c2").getContext("2d");
         span1 = document.getElementById("s1");
 
         navigator.mediaDevices.getUserMedia({ video: { facingMode: { exact: "environment" } } })
@@ -46,7 +37,6 @@
           .then((stream) => { player.srcObject = stream; });
 
         setInterval(capture, 500);
-        setInterval(drawOverlayOnly, 100); // sujuv pulseeriv soovitus
       }
 
       // ---------- Kaamera lugemine ----------
@@ -62,17 +52,16 @@
         const cellH = c.height / 3;
         const board = [];
 
-        // 1) loe kõik ruudud ENNE joonistamist
+        // loe kõik ruudud ENNE joonistamist
         for (let row = 0; row < 3; row++) {
           for (let col = 0; col < 3; col++) {
             const cx = Math.floor((col + 0.5) * cellW);
             const cy = Math.floor((row + 0.5) * cellH);
-            const imgData = g.getImageData(cx - 10, cy - 10, 20, 20);
-            board.push(detectColor(imgData.data));
+            board.push(detectColor(g.getImageData(cx - 10, cy - 10, 20, 20).data));
           }
         }
 
-        // 2) stabiilsuse kontroll: reageeri alles siis, kui laud on mitu kaadrit sama
+        // reageeri alles siis, kui laud on mitu kaadrit järjest sama
         const key = board.join(",");
         if (key === lastKey) {
           stableCount++;
@@ -82,27 +71,10 @@
         }
         if (stableCount >= STABLE_FRAMES && key !== acceptedKey) {
           acceptedKey = key;
-          acceptedBoard = board.slice();
-          const local = analyse(acceptedBoard); // kohalik analüüs = varuvariant
-          if (SCRIPT_URL.startsWith("http")) {
-            if (local.kind === "computer") {
-              state = { kind: "thinking", board: acceptedBoard, move: null, message: "Mõtlen..." };
-            } else {
-              state = local;
-            }
-            displayStatus(state);
-            askServer(acceptedBoard, key, local); // logib laua tabelisse ja küsib käigu
-          } else {
-            state = local;
-            displayStatus(state);
-          }
+          handleBoard(board, key);
         }
 
-        // 3) joonista (kaamerapilt + märgid + soovitus)
         drawBoard(board, cellW, cellH);
-
-        const centerBoxData = g.getImageData(cellW + 33, cellH + 20, 40, 40);
-        g2.putImageData(centerBoxData, 0, 0);
       }
 
       function drawBoard(board, cellW, cellH) {
@@ -142,39 +114,19 @@
           g.stroke();
         }
 
-        drawSuggestion(cellW, cellH);
-      }
-
-      // Soovituse ring joonistatakse otse kaamerapildi peale (ei sega värvide lugemist,
-      // sest lugemine toimub alati enne joonistamist).
-      function drawSuggestion(cellW, cellH) {
-        if (state.kind !== "computer" || state.move == null) return;
-        const row = Math.floor(state.move / 3);
-        const col = state.move % 3;
-        const cx = (col + 0.5) * cellW;
-        const cy = (row + 0.5) * cellH;
-        const r = Math.min(cellW, cellH) * 0.3;
-        const pulse = 3 + 2 * Math.sin(Date.now() / 150);
-
-        g.save();
-        g.strokeStyle = "lime";
-        g.lineWidth = pulse;
-        g.setLineDash([8, 6]);
-        g.beginPath();
-        g.arc(cx, cy, r, 0, Math.PI * 2);
-        g.stroke();
-        g.restore();
-      }
-
-      // Et pulseeriv ring liiguks ka kaadrite vahel, joonistame ainult pildi uuesti
-      function drawOverlayOnly() {
-        if (!player || player.readyState < 2 || state.kind !== "computer") return;
-        // Kasutame viimast tuvastatud lauda; pilt joonistatakse värskelt
-        g.drawImage(player, 0, 0, c.width, c.height);
-        drawBoard(lastBoardForDraw(), c.width / 3, c.height / 3);
-      }
-      function lastBoardForDraw() {
-        return lastKey ? lastKey.split(",") : Array(9).fill("EMPTY");
+        // arvuti soovitatud käik: roheline katkendlik ring
+        if (state.kind === "computer" && state.move != null) {
+          const cx = ((state.move % 3) + 0.5) * cellW;
+          const cy = (Math.floor(state.move / 3) + 0.5) * cellH;
+          g.save();
+          g.strokeStyle = "lime";
+          g.lineWidth = 3 + 2 * Math.sin(Date.now() / 150);
+          g.setLineDash([8, 6]);
+          g.beginPath();
+          g.arc(cx, cy, Math.min(cellW, cellH) * 0.3, 0, Math.PI * 2);
+          g.stroke();
+          g.restore();
+        }
       }
 
       // ---------- Värvituvastus ----------
@@ -200,146 +152,77 @@
         return "EMPTY";
       }
 
-      // ---------- Mängu loogika ----------
-      function checkWinner(board) {
-        for (const [a, b, d] of WIN_COMBOS) {
-          if (board[a] !== "EMPTY" && board[a] === board[b] && board[a] === board[d]) {
-            return board[a];
-          }
-        }
-        if (board.every(cell => cell !== "EMPTY")) return "DRAW";
-        return null;
-      }
-
-      function other(p) { return p === "RED" ? "BLUE" : "RED"; }
-
-      // Minimax: arvuti mängib vääramatult (parimal juhul viik)
-      function minimax(b, turn, me, depth) {
-        const w = checkWinner(b);
-        if (w === me) return 10 - depth;      // kiirem võit on parem
-        if (w === "DRAW") return 0;
-        if (w) return depth - 10;             // vastane võitis; hilisem kaotus on parem
-
-        let best = turn === me ? -Infinity : Infinity;
-        for (let i = 0; i < 9; i++) {
-          if (b[i] !== "EMPTY") continue;
-          b[i] = turn;
-          const s = minimax(b, other(turn), me, depth + 1);
-          b[i] = "EMPTY";
-          best = turn === me ? Math.max(best, s) : Math.min(best, s);
-        }
-        return best;
-      }
-
-      function bestMove(board, me) {
-        const b = board.slice();
-        let bestScore = -Infinity, move = null;
-        // eelista keskkohta, nurki, siis servi (viigi korral)
-        const order = [4, 0, 2, 6, 8, 1, 3, 5, 7];
-        for (const i of order) {
-          if (b[i] !== "EMPTY") continue;
-          b[i] = me;
-          const s = minimax(b, other(me), me, 1);
-          b[i] = "EMPTY";
-          if (s > bestScore) { bestScore = s; move = i; }
-        }
-        return move;
-      }
-
-      // Analüüsib stabiilset lauda ja otsustab, mida teha
-      function analyse(board) {
-        const firstCount = board.filter(x => x === FIRST).length;
-        const secondCount = board.filter(x => x === other(FIRST)).length;
-
-        // Vigane seis (nt valesti loetud värv või käik jäi tegemata/topelt)
-        if (secondCount > firstCount || firstCount > secondCount + 1) {
-          return { kind: "invalid", board, move: null,
-                   message: "Laud ei tundu õige (märkide arv ei klapi). Kontrolli tükke ja valgust." };
+      // ---------- Server (Google Apps Script) otsustab ----------
+      async function handleBoard(board, key) {
+        if (!SCRIPT_URL.startsWith("http")) {
+          state = { kind: "error", board, move: null, message: "SCRIPT_URL on määramata." };
+          displayStatus(state);
+          return;
         }
 
-        // Kas arvuti tegi eelmise käigu õigesti?
-        let warning = "";
-        if (plan) {
-          const key = board.join(",");
-          if (key !== plan.expected.join(",") && key !== plan.before.join(",")) {
-            warning = "<br/><i>Hoiatus: laud ei vasta soovitatud käigule.</i>";
-          }
-        }
+        state = { kind: "thinking", board, move: null, message: "Mõtlen..." };
+        displayStatus(state);
 
-        const winner = checkWinner(board);
-        if (winner) {
-          plan = null;
-          const msg = winner === "DRAW" ? "VIIK"
-                    : winner === "RED" ? "PUNANE (X) VÕIT!"
-                    : "SININE (O) VÕIT!";
-          return { kind: "over", board, move: null, message: msg, winner };
-        }
-
-        const turn = firstCount === secondCount ? FIRST : other(FIRST);
-
-        if (turn === HUMAN) {
-          plan = null;
-          return { kind: "wait", board, move: null,
-                   message: "Sinu käik – pane " + (HUMAN === "RED" ? "punane (X)" : "sinine (O)") + " tükk lauale." + warning };
-        }
-
-        // Arvuti käik
-        let move;
-        if (Math.random() < RANDOM_MOVE_CHANCE) {
-          const empties = [];
-          board.forEach((v, i) => { if (v === "EMPTY") empties.push(i); });
-          move = empties[Math.floor(Math.random() * empties.length)];
-        } else {
-          move = bestMove(board, COMPUTER);
-        }
-        const expected = board.slice();
-        expected[move] = COMPUTER;
-        plan = { move, before: board.slice(), expected };
-        return {
-          kind: "computer", board, move,
-          message: "Minu käik: pane " + (COMPUTER === "BLUE" ? "SININE (O)" : "PUNANE (X)") +
-                   " tükk ruutu <b>" + (move + 1) + "</b> (" + CELL_NAMES[move] + ")." + warning
-        };
-      }
-
-      // ---------- Google Apps Scripti ühendus ----------
-      async function askServer(board, key, local) {
         const code = board.map(v => v === "RED" ? "X" : (v === "BLUE" ? "O" : "-")).join("");
         const url = SCRIPT_URL +
           "?board=" + code +
           "&me=" + (COMPUTER === "BLUE" ? "O" : "X") +
           "&first=" + (FIRST === "RED" ? "X" : "O");
-        try {
-          const res = await fetch(url);
-          const d = await res.json();
-          if (key !== acceptedKey) return; // laud muutus vahepeal, vastus on aegunud
 
-          if (local.kind === "computer") {
-            if (d.status === "computer" && d.move >= 0 && d.move < 9 && board[d.move] === "EMPTY") {
-              const expected = board.slice();
-              expected[d.move] = COMPUTER;
-              plan = { move: d.move, before: board.slice(), expected };
-              state = {
-                kind: "computer", board, move: d.move,
-                message: "Minu käik: pane " + (COMPUTER === "BLUE" ? "SININE (O)" : "PUNANE (X)") +
-                         " tükk ruutu <b>" + (d.move + 1) + "</b> (" + CELL_NAMES[d.move] + ")."
-              };
-            } else {
-              state = local; // server ei nõustunud/andis vigase käigu – kasuta kohalikku
-            }
-            displayStatus(state);
-          }
+        let d;
+        try {
+          d = await (await fetch(url)).json();
         } catch (err) {
           if (key !== acceptedKey) return;
-          state = local; // võrguviga – kasuta kohalikku arvutust
+          state = { kind: "error", board, move: null, message: "Serveriga ei saanud ühendust, proovin uuesti..." };
           displayStatus(state);
+          setTimeout(() => { if (key === acceptedKey) acceptedKey = null; }, 3000); // luba kordus
+          return;
         }
+        if (key !== acceptedKey) return; // laud muutus vahepeal, vastus on aegunud
+
+        // kas eelmine arvuti käik tehti soovitatud kohta?
+        let warning = "";
+        if (plan && key !== plan.expected && key !== plan.before) {
+          warning = "<br/><i>Hoiatus: laud ei vasta soovitatud käigule.</i>";
+        }
+
+        if (d.status === "computer" && d.move >= 0 && d.move < 9 && board[d.move] === "EMPTY") {
+          const expected = board.slice();
+          expected[d.move] = COMPUTER;
+          plan = { before: key, expected: expected.join(",") };
+          state = {
+            kind: "computer", board, move: d.move,
+            message: "Minu käik: pane " + (COMPUTER === "BLUE" ? "SININE (O)" : "PUNANE (X)") +
+                     " tükk ruutu <b>" + (d.move + 1) + "</b> (" + CELL_NAMES[d.move] + ")." + warning
+          };
+        } else if (d.status === "wait") {
+          plan = null;
+          state = {
+            kind: "wait", board, move: null,
+            message: "Sinu käik – pane " + (HUMAN === "RED" ? "punane (X)" : "sinine (O)") + " tükk lauale." + warning
+          };
+        } else if (d.status === "over") {
+          plan = null;
+          const msg = d.winner === "DRAW" ? "VIIK"
+                    : d.winner === "X" ? "PUNANE (X) VÕIT!"
+                    : "SININE (O) VÕIT!";
+          state = {
+            kind: "over", board, move: null, message: msg,
+            winner: d.winner === "DRAW" ? "DRAW" : (d.winner === "X" ? "RED" : "BLUE")
+          };
+        } else {
+          state = {
+            kind: "invalid", board, move: null,
+            message: "Laud ei tundu õige (märkide arv ei klapi). Kontrolli tükke ja valgust."
+          };
+        }
+        displayStatus(state);
       }
 
       // ---------- Kuvamine ----------
       function displayStatus(st) {
-        const board = st.board;
-        const gridFormatted = board.map((val, idx) => {
+        const gridFormatted = st.board.map((val, idx) => {
           let mark = val === "RED" ? "X" : (val === "BLUE" ? "O" : ".");
           if (st.kind === "computer" && idx === st.move) mark = "<b style='color:green;'>[o]</b>";
           return mark + ((idx + 1) % 3 === 0 ? "<br/>" : " ");
@@ -347,7 +230,7 @@
 
         let color = "black";
         if (st.kind === "over") color = st.winner === "RED" ? "red" : (st.winner === "BLUE" ? "blue" : "black");
-        if (st.kind === "invalid") color = "darkorange";
+        if (st.kind === "invalid" || st.kind === "error") color = "darkorange";
 
         let statusText = "<b>Board State:</b><br/>" + gridFormatted;
         statusText += "<br/><b style='color:" + color + ";'>" + st.message + "</b>";
@@ -360,7 +243,6 @@
   <body onload="start()">
     <video id="v1" controls autoplay playsinline style="width: 45%"></video>
     <canvas id="c1" width="320" height="240" style="width: 45%"></canvas><br />
-    <canvas id="c2" width="40" height="40"></canvas>
     <span id="s1">Paiguta punased ristid või sinised ringid mängimiseks ruudustikku</span><br />
     Sina alustad ja mängid punaste ristidega (X).
   </body>
